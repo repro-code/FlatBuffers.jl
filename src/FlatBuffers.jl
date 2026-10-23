@@ -216,9 +216,21 @@ function getvalue(t, o, ::Type{Vector{UInt8}})
 	return t.bytes[o + 1:o + len] #TODO: maybe not make copy here?
 end
 
-getarray(t, vp, len, ::Type{T}) where {T <: Scalar} = (ptr = convert(Ptr{T}, pointer(t.bytes, vp + 1)); return [unsafe_load(ptr, i) for i = 1:len])
-getarray(t, vp, len, ::Type{T}) where {T <: Enum} = (ptr = convert(Ptr{enumtype(T)}, pointer(t.bytes, vp + 1)); return [unsafe_load(ptr, i) for i = 1:len])
+# Throw unless the `n` bytes at (0-based) position `pos` are within `bytes`, which may be untrusted
+checkrange(bytes, pos, n) = (0 <= pos && 0 <= n && pos + n <= length(bytes)) || throw(BoundsError(bytes, pos+1:pos+n))
+
+function getarray(t, vp, len, ::Type{T}) where {T <: Scalar}
+	checkrange(t.bytes, vp, len * sizeof(T))
+	ptr = convert(Ptr{T}, pointer(t.bytes, vp + 1))
+	return [unsafe_load(ptr, i) for i = 1:len]
+end
+function getarray(t, vp, len, ::Type{T}) where {T <: Enum}
+	checkrange(t.bytes, vp, len * sizeof(enumtype(T)))
+	ptr = convert(Ptr{enumtype(T)}, pointer(t.bytes, vp + 1))
+	return [unsafe_load(ptr, i) for i = 1:len]
+end
 function getarray(t, vp, len, ::Type{T}) where {T <: Union{AbstractString, Vector{UInt8}}}
+	checkrange(t.bytes, vp, len * sizeof(Int32))
 	A = Vector{T}(undef, len)
 	for i = 1:len
 		A[i] = getvalue(t, vp - t.pos, T)
@@ -228,9 +240,11 @@ function getarray(t, vp, len, ::Type{T}) where {T <: Union{AbstractString, Vecto
 end
 function getarray(t, vp, len, ::Type{T}) where {T}
 	if isstruct(T)
+		checkrange(t.bytes, vp, len * sizeof(T))
 		ptr = convert(Ptr{T}, pointer(t.bytes, vp + 1))
 		return [unsafe_load(ptr, i) for i = 1:len]
 	else
+		checkrange(t.bytes, vp, len * sizeof(Int32))
 		A = Vector{T}(undef, len)
 		for i = 1:len
 			A[i] = getvalue(t, vp - t.pos, T)
@@ -255,12 +269,15 @@ function getvalue(t, o, ::Type{T}) where {T}
 			args = []
 			o = t.pos + o + 1
 			for typ in T.types
-				val = unsafe_load(convert(Ptr{typ <: Enum ? enumtype(typ) : typ}, pointer(view(t.bytes, o:length(t.bytes)))))
+				S = typ <: Enum ? enumtype(typ) : typ
+				checkrange(t.bytes, o - 1, sizeof(S))
+				val = unsafe_load(convert(Ptr{S}, pointer(view(t.bytes, o:length(t.bytes)))))
 				push!(args, val)
-				o += sizeof(typ <: Enum ? enumtype(typ) : typ)
+				o += sizeof(S)
 			end
 			return T(args...)
 		else
+			checkrange(t.bytes, t.pos + o, sizeof(T))
 			return unsafe_load(convert(Ptr{T}, pointer(view(t.bytes, (t.pos + o + 1):length(t.bytes)))))
 		end
 	else

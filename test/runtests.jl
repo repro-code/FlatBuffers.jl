@@ -3,6 +3,7 @@ using Test
 
 include("defaults.jl")
 include("internals.jl")
+include("bounds.jl")
 CheckByteLayout()
 CheckManualBuild()
 CheckVtableDeduplication()
