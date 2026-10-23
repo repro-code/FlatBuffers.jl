@@ -5,9 +5,13 @@ const TableOrBuilder = Union{Table,Builder}
 
 const Bytes2Type = Dict{Int, DataType}(1=>UInt8, 2=>UInt16, 4=>UInt32, 8=>UInt64)
 
-Base.get(t::TableOrBuilder, pos, ::Type{T}) where {T} = read(IOBuffer(view(t.bytes, (pos+1):length(t.bytes))), T)
+function Base.get(t::TableOrBuilder, pos, ::Type{T}) where {T}
+	bytes = t.bytes
+	checkrange(bytes, pos, sizeof(T))
+	return GC.@preserve bytes unsafe_load(convert(Ptr{T}, pointer(bytes, pos + 1)))
+end
 readbuffer(t::AbstractVector{UInt8}, pos::Int, ::Type{T}) where {T} = read(IOBuffer(view(t, (pos+1):length(t))), T)
-Base.get(t::TableOrBuilder, pos, ::Type{T}) where {T <: Enum} = T(read(IOBuffer(view(t.bytes, (pos+1):length(t.bytes))), Bytes2Type[sizeof(T)]))
+Base.get(t::TableOrBuilder, pos, ::Type{T}) where {T <: Enum} = T(get(t, pos, Bytes2Type[sizeof(T)]))
 
 """
 `offset` provides access into the Table's vtable.
